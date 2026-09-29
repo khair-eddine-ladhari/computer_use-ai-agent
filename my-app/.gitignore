@@ -1,0 +1,43 @@
+# --- Dependencies ---
+node_modules/
+**/node_modules/
+
+# --- Next.js (web/) ---
+web/.next/
+web/out/
+web/next-env.d.ts
+
+# --- Environment variables (never commit secrets/API keys) ---
+.env
+.env.local
+.env.*.local
+**/.env
+
+# --- Python (agent-server/) ---
+agent-server/__pycache__/
+**/__pycache__/
+agent-server/venv/
+agent-server/.venv/
+*.pyc
+
+# --- Logs ---
+*.log
+npm-debug.log*
+
+# --- OS junk ---
+.DS_Store
+Thumbs.db
+
+# --- Editor ---
+.vscode/*
+!.vscode/extensions.json
+
+# --- Build output ---
+dist/
+build/
+
+# --- Misc uploads (screenshots you dropped in for reference) ---
+*.png
+*.webp
+*.jpg
+!web/public/**
