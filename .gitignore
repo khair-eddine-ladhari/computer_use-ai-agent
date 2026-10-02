@@ -28,13 +28,13 @@ server-web/dist/
 *.tsbuildinfo
 
 # ============================
-# Python (agent-server/ — once it exists)
+# Python (server-agent/)
 # ============================
-agent-server/__pycache__/
 **/__pycache__/
-agent-server/venv/
-agent-server/.venv/
+**/.venv/
+**/venv/
 *.pyc
+*.pyo
 
 # ============================
 # Logs
@@ -60,3 +60,6 @@ Thumbs.db
 c.jpg
 Screenshot-from-*.webp
 wallpy-2.jpg
+
+# Note: uv.lock, package-lock.json, and pyproject.toml are intentionally
+# NOT ignored — these should be committed for reproducible installs.
