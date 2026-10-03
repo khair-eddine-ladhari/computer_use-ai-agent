@@ -5,7 +5,7 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
-    "crewai>=1.15.23",
+    "crewai[google-genai]>=1.15.23",
     "fastapi[standard]>=0.142.2",
     "litellm>=1.103.2",
     "python-dotenv>=1.2.4",
