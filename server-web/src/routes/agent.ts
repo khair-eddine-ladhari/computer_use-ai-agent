@@ -3,6 +3,7 @@ import crypto from "crypto";
 import Conversation from "../models/Conversation";
 import Task from "../models/Task";
 import { requireFields } from "../middleware/validation";
+import AuditLog from "../models/AuditLog";
 
 const router = express.Router();
 
@@ -55,7 +56,20 @@ router.post(
         await task.save();
       }
 
-      // 3. Persist the conversation either way — chat or task,
+      // 3. Log every real tool call the agent made, tied to this session
+      //    and (if one exists) this task — this is the safety/audit trail.
+      for (const call of toolCalls) {
+        await AuditLog.create({
+          sessionId,
+          taskId: task?.id,
+          tool: call.tool,
+          args: call.args,
+          result: "success",
+          timestamp: Date.now(),
+        });
+      }
+
+      // 4. Persist the conversation either way — chat or task,
       //    every message still belongs in the chat history.
       const userMessage = { role: "user" as const, text, timestamp: Date.now() };
       const agentMessage = { role: "agent" as const, text: replyText, timestamp: Date.now() };
@@ -67,7 +81,7 @@ router.post(
       conversation.messages.push(userMessage, agentMessage);
       await conversation.save();
 
-      // 4. If a Task was created, mark it completed now that the
+      // 5. If a Task was created, mark it completed now that the
       //    agent has finished responding.
       if (task) {
         task.status = "completed";
