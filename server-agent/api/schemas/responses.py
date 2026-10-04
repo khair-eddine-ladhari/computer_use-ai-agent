@@ -1,5 +1,5 @@
 from pydantic import BaseModel
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Literal
 
 class ToolCall(BaseModel):
     tool: str
@@ -14,3 +14,4 @@ class AgentReply(BaseModel):
 class AgentMessageResponse(BaseModel):
     reply: AgentReply
     toolCalls: List[ToolCall]
+    messageType: Literal["chat", "task"]
