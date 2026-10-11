@@ -37,8 +37,9 @@ router.post(
       });
 
       if (!agentRes.ok) {
-        throw new Error(`agent-server responded with ${agentRes.status}`);
-      }
+  const detail = await agentRes.text();
+  throw new Error(`agent-server responded with ${agentRes.status}: ${detail}`);
+}
 
       const agentData = (await agentRes.json()) as AgentServerResponse;
       const replyText = agentData.reply.text;

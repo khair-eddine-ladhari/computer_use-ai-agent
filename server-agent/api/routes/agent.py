@@ -1,6 +1,7 @@
 import uuid
 import time
-from fastapi import APIRouter
+import traceback
+from fastapi import APIRouter, HTTPException
 from api.schemas.requests import AgentMessageRequest
 from api.schemas.responses import AgentMessageResponse, AgentReply, ToolCall
 from crew.crew import run_chat
@@ -10,8 +11,12 @@ router = APIRouter()
 
 @router.post("/message", response_model=AgentMessageResponse)
 def handle_message(body: AgentMessageRequest):
-    message_type = classify_message(body.text)
-    reply_text, tool_calls = run_chat(body.text)
+    try:
+        message_type = classify_message(body.text)
+        reply_text, tool_calls = run_chat(body.text)
+    except Exception as e:
+        traceback.print_exc()
+        raise HTTPException(status_code=502, detail=f"{type(e).__name__}: {e}")
 
     return AgentMessageResponse(
         reply=AgentReply(
