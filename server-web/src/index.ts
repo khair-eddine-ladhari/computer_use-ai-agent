@@ -2,6 +2,7 @@ import express from "express";
 import cors from "cors";
 import dotenv from "dotenv";
 import agentRoutes from "./routes/agent";
+import tasksRoutes from "./routes/tasks";
 import { connectDB } from "./db/mongodb";
 import { errorHandler } from "./middleware/errorHandler";
 
@@ -18,8 +19,9 @@ app.get("/health", (req, res) => {
 });
 
 app.use("/api/agent", agentRoutes);
+app.use("/api/tasks", tasksRoutes);
 
-// Must be registered last — after all routes, so it catches errors from any of them
+// Must be registered last, after all routes, so it catches errors from any of them
 app.use(errorHandler);
 
 connectDB().then(() => {

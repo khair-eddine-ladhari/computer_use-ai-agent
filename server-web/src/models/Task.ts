@@ -1,13 +1,15 @@
 import mongoose, { Schema, Document } from "mongoose";
 
-export type TaskStatus = "running" | "done" | "failed" | "stopped";
+export type TaskStatus = "pending" | "running" | "completed" | "failed" | "cancelled";
 
 export interface ITask extends Document {
   sessionId: string;
   goal: string;
   status: TaskStatus;
-  stepCount: number;
-  summary?: string;
+  result?: string;
+  error?: string;
+  startedAt?: Date;
+  finishedAt?: Date;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -18,11 +20,14 @@ const TaskSchema = new Schema<ITask>(
     goal: { type: String, required: true },
     status: {
       type: String,
-      enum: ["running", "done", "failed", "stopped"],
-      default: "running",
+      enum: ["pending", "running", "completed", "failed", "cancelled"],
+      default: "pending",
+      index: true,
     },
-    stepCount: { type: Number, default: 0 },
-    summary: { type: String },
+    result: { type: String },
+    error: { type: String },
+    startedAt: { type: Date },
+    finishedAt: { type: Date },
   },
   { timestamps: true }
 );
