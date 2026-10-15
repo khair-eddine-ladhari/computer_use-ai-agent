@@ -47,7 +47,7 @@ export default function Dock() {
 
   return (
     <nav ref={dockRef} aria-label="Applications" className="fixed bottom-5 left-1/2 z-40 -translate-x-1/2">
-      <div className="dock-shell chrome-panel flex items-center gap-1.5 rounded-2xl p-2 shadow-window">
+      <div className="dock-shell chrome-panel flex items-center gap-1 rounded-xl p-1.5">
         {DOCK_APPS.map(({ id, label, icon: Icon }) => {
           const isOpen = openApps.includes(id);
           const isVisible = windows.some((win) => win.appId === id && !win.isMinimized);
@@ -61,7 +61,7 @@ export default function Dock() {
               }}
               title={`${label} (click to open or close)`}
               aria-label={`${isVisible ? "Close" : "Open"} ${label}`}
-              className="dock-item group relative flex h-12 w-12 items-center justify-center rounded-xl text-slate-300 transition-colors hover:bg-slate-700/70 hover:text-white"
+              className="dock-item group relative flex h-11 w-11 items-center justify-center rounded-lg text-[#bdbdbd] transition-colors hover:bg-[#3a3a3a] hover:text-white"
               whileHover={{ y: -4, scale: 1.08 }}
               whileTap={{ scale: 0.92 }}
               transition={{ type: "spring", stiffness: 420, damping: 24 }}
