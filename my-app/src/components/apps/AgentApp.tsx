@@ -48,13 +48,16 @@ export default function AgentApp() {
       }
 
       setMessages((m) => [...m, reply]);
-    } catch (err) {
+        } catch (err) {
+      const timedOut = err instanceof DOMException && err.name === "AbortError";
       setMessages((m) => [
         ...m,
         {
           id: crypto.randomUUID(),
           role: "agent",
-          text: "Couldn't reach the agent server. Is it running?",
+          text: timedOut
+            ? "The agent took too long to respond. Please try again."
+            : "Couldn't reach the agent server. Is it running?",
           timestamp: Date.now(),
         },
       ]);

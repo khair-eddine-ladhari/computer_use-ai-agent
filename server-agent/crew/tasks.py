@@ -1,15 +1,14 @@
-from crewai import Task
-from crew.agents import create_computer_agent
+from crewai import Task, Agent
 
-def create_chat_task(user_message: str) -> Task:
-    agent = create_computer_agent()
 
+def create_chat_task(user_message: str, agent: Agent) -> Task:
     return Task(
         description=(
             f"The user said: \"{user_message}\"\n\n"
-            "Respond helpfully and naturally, as if you are the computer agent "
-            "talking directly to the user."
+            "If this is a request to do something on the desktop, call the one "
+            "matching tool. If it is just conversation, reply naturally in a "
+            "short sentence without using any tool."
         ),
-        expected_output="A short, natural reply to the user's message.",
+        expected_output="A short, natural reply, or the result of the single tool you used.",
         agent=agent,
     )

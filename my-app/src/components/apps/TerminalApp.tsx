@@ -1,33 +1,13 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-
-interface HistoryLine {
-  type: "input" | "output";
-  text: string;
-}
+import { useDesktopStore } from "@/store/desktopStore";
 
 const PROMPT = "user@computer-agent:~$";
 
-function runCommand(command: string): string {
-  const cmd = command.trim();
-
-  if (cmd === "") return "";
-  if (cmd === "help") {
-    return "Available commands: help, whoami, date, ls, clear";
-  }
-  if (cmd === "whoami") return "user";
-  if (cmd === "date") return new Date().toString();
-  if (cmd === "ls") return "Documents  Downloads  Pictures";
-  if (cmd === "clear") return "__CLEAR__";
-
-  return `command not found: ${cmd}`;
-}
-
 export default function TerminalApp() {
-  const [history, setHistory] = useState<HistoryLine[]>([
-    { type: "output", text: "Welcome. Type 'help' to see available commands." },
-  ]);
+  const history = useDesktopStore((s) => s.terminalHistory);
+  const runTerminalCommand = useDesktopStore((s) => s.runTerminalCommand);
   const [input, setInput] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -37,24 +17,14 @@ export default function TerminalApp() {
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    const output = runCommand(input);
-
-    if (output === "__CLEAR__") {
-      setHistory([]);
-    } else {
-      setHistory((h) => [
-        ...h,
-        { type: "input", text: input },
-        ...(output ? [{ type: "output" as const, text: output }] : []),
-      ]);
-    }
+    runTerminalCommand(input);
     setInput("");
   }
 
   return (
     <div
       ref={scrollRef}
-      className="themed-scroll h-full overflow-auto bg-panel p-3 font-mono text-xs text-ink"
+      className="themed-scroll h-full overflow-auto bg-black/40 p-3 font-mono text-xs text-ink"
     >
       {history.map((line, i) => (
         <div key={i} className="mb-1">
@@ -63,13 +33,13 @@ export default function TerminalApp() {
               <span className="text-accent">{PROMPT}</span> {line.text}
             </span>
           ) : (
-            <span className="text-ink-muted whitespace-pre-wrap">{line.text}</span>
+            <span className="whitespace-pre-wrap text-ink-muted">{line.text}</span>
           )}
         </div>
       ))}
 
       <form onSubmit={handleSubmit} className="flex items-center gap-2">
-        <span className="text-accent shrink-0">{PROMPT}</span>
+        <span className="shrink-0 text-accent">{PROMPT}</span>
         <input
           value={input}
           onChange={(e) => setInput(e.target.value)}

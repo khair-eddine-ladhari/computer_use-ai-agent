@@ -1,10 +1,12 @@
+import concurrent.futures
 from llm.client import get_llm
 
-def classify_message(user_message: str) -> str:
-    """
-    Decides whether a message is casual chat or an actual task/request
-    for the agent to act on. Returns 'chat' or 'task'.
-    """
+CLASSIFY_TIMEOUT_SECONDS = 10
+
+_executor = concurrent.futures.ThreadPoolExecutor(max_workers=2)
+
+
+def _classify(user_message: str) -> str:
     llm = get_llm()
 
     prompt = (
@@ -17,6 +19,13 @@ def classify_message(user_message: str) -> str:
     )
 
     response = llm.call(prompt)
-    result = response.strip().lower()
-
+    result = str(response).strip().lower()
     return "task" if "task" in result else "chat"
+
+
+def classify_message(user_message: str) -> str:
+    future = _executor.submit(_classify, user_message)
+    try:
+        return future.result(timeout=CLASSIFY_TIMEOUT_SECONDS)
+    except Exception:
+        return "chat"
