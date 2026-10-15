@@ -1,5 +1,7 @@
 import { create } from "zustand";
-import type { AppId, WindowState } from "@/agent/types";
+import type { AppId, WindowState, TerminalLine } from "@/agent/types";
+import { FILE_TREE } from "@/lib/fileSystem";
+import { runCommand, CLEAR_SIGNAL } from "@/lib/terminal";
 
 const APP_TITLES: Record<AppId, string> = {
   files: "Files",
@@ -18,17 +20,32 @@ const DEFAULT_SIZE: Record<AppId, { width: number; height: number }> = {
 interface DesktopState {
   windows: WindowState[];
   nextZIndex: number;
+
+  filesPath: string[];
+  selectedFile: string | null;
+  terminalHistory: TerminalLine[];
+
   openApp: (appId: AppId) => void;
   closeApp: (appId: AppId) => void;
   closeWindow: (id: string) => void;
   focusWindow: (id: string) => void;
   minimizeWindow: (id: string) => void;
   moveWindow: (id: string, x: number, y: number) => void;
+
+  setFilesPath: (path: string[]) => void;
+  selectFile: (name: string | null) => void;
+  runTerminalCommand: (command: string) => void;
 }
 
 export const useDesktopStore = create<DesktopState>((set, get) => ({
   windows: [],
   nextZIndex: 1,
+
+  filesPath: [FILE_TREE.name],
+  selectedFile: null,
+  terminalHistory: [
+    { type: "output", text: "Welcome. Type 'help' to see available commands." },
+  ],
 
   openApp: (appId) => {
     const existing = get().windows.find((w) => w.appId === appId);
@@ -74,9 +91,7 @@ export const useDesktopStore = create<DesktopState>((set, get) => ({
   focusWindow: (id) => {
     set((state) => ({
       windows: state.windows.map((w) =>
-        w.id === id
-          ? { ...w, zIndex: state.nextZIndex, isMinimized: false }
-          : w
+        w.id === id ? { ...w, zIndex: state.nextZIndex, isMinimized: false } : w
       ),
       nextZIndex: state.nextZIndex + 1,
     }));
@@ -93,6 +108,31 @@ export const useDesktopStore = create<DesktopState>((set, get) => ({
   moveWindow: (id, x, y) => {
     set((state) => ({
       windows: state.windows.map((w) => (w.id === id ? { ...w, x, y } : w)),
+    }));
+  },
+
+  setFilesPath: (path) => {
+    set({ filesPath: path, selectedFile: null });
+  },
+
+  selectFile: (name) => {
+    set({ selectedFile: name });
+  },
+
+  runTerminalCommand: (command) => {
+    const output = runCommand(command);
+
+    if (output === CLEAR_SIGNAL) {
+      set({ terminalHistory: [] });
+      return;
+    }
+
+    set((state) => ({
+      terminalHistory: [
+        ...state.terminalHistory,
+        { type: "input", text: command },
+        ...(output ? [{ type: "output" as const, text: output }] : []),
+      ],
     }));
   },
 }));

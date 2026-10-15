@@ -7,13 +7,13 @@
   --color-wallpaper-end: #ffffff;
 
   /* Clean white panels */
-  --color-panel: #ffffff;
-  --color-panel-light: #f3f6fa;
-  --color-panel-border: #dce3ec;
+  --color-panel: #1e1e1e;
+  --color-panel-light: #2d2d30;
+  --color-panel-border: #3c3c3c;
 
   /* Text */
-  --color-ink: #172033;
-  --color-ink-muted: #64748b;
+  --color-ink: #cccccc;
+  --color-ink-muted: #9d9d9d;
 
   /* Accent blue */
   --color-accent: #173a78;
@@ -63,6 +63,48 @@
     background-color: color-mix(in srgb, var(--color-panel) 97%, transparent);
     backdrop-filter: blur(24px);
     border: 1px solid var(--color-panel-border);
+  }
+
+  .agent-docked-window {
+    position: fixed;
+    z-index: 35;
+    background: #1e1e1e;
+    border-left: 1px solid #333333;
+    color: #cccccc;
+  }
+
+  .agent-docked-window > div:first-child {
+    border-color: #333333;
+    background: #252526;
+  }
+
+  .agent-docked-window > div:first-child span {
+    color: #cccccc;
+  }
+
+  .agent-docked-window .bg-panel {
+    background-color: #1e1e1e;
+  }
+
+  .agent-docked-window .bg-panel-light {
+    background-color: #2d2d30;
+  }
+
+  .agent-docked-window .border-panel-border {
+    border-color: #3c3c3c;
+  }
+
+  .agent-docked-window .text-ink {
+    color: #cccccc;
+  }
+
+  .agent-docked-window .text-ink-muted,
+  .agent-docked-window input::placeholder {
+    color: #9d9d9d;
+  }
+
+  .agent-docked-window input {
+    color: #cccccc;
   }
 
   .chrome-panel {
