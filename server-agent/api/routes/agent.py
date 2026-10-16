@@ -12,8 +12,11 @@ router = APIRouter()
 
 @router.post("/message", response_model=AgentMessageResponse)
 def handle_message(body: AgentMessageRequest):
+    history = [h.model_dump() for h in body.history]
+
+
     try:
-        reply_text, tool_calls = run_chat(body.text)
+        reply_text, tool_calls = run_chat(body.text, history)
     except Exception as e:
         traceback.print_exc()
         raise HTTPException(status_code=502, detail=f"{type(e).__name__}: {e}")

@@ -20,10 +20,11 @@ interface AgentServerResponse {
 
 const AGENT_SERVER_URL = process.env.AGENT_SERVER_URL || "http://localhost:8000";
 
+// How many earlier messages the agent gets to see with each request.
+const HISTORY_LIMIT = 10;
+
 // How long Node waits for FastAPI before giving up. Keep this LONGER than the
-// Python budget (MAX_TOTAL_SECONDS = 60 in crew/crew.py) so Python normally
-// answers first with its own clean "model busy" error. This is the backstop
-// for when Python is stuck and never answers.
+// Python budget so Python normally answers first with its own clean error.
 const AGENT_TIMEOUT_MS = 90_000;
 
 const BUSY_MESSAGE = "The model is busy right now. Please try again in a moment.";
@@ -44,7 +45,7 @@ async function readErrorDetail(agentRes: {
 }
 
 // True when Node itself gave up waiting: our AbortSignal.timeout,
-// or one of undici's built-in timeouts (the old HeadersTimeoutError).
+// or one of undici's built-in timeouts.
 function isTimeout(err: unknown): boolean {
   const e = err as { name?: string; cause?: { code?: string } } | null;
   return (
@@ -63,18 +64,25 @@ router.post(
     let task = null;
 
     try {
-      // 1. Call the real AI brain — it decides the reply AND classifies
-      //    whether this message is casual chat or an actual task.
-      //    The timeout makes sure we never wait forever.
+      // 1. Load this session's conversation BEFORE calling the agent, and take
+      //    the most recent messages as its memory. The new message isn't saved
+      //    yet, so history only contains what came before it.
+      let conversation = await Conversation.findOne({ sessionId });
+      const history = (conversation?.messages ?? [])
+        .slice(-HISTORY_LIMIT)
+        .map((m) => ({ role: m.role, text: m.text }));
+
+
+      // 2. Call the AI brain with the history. It decides the reply AND
+      //    classifies whether this message is chat or a task.
       const agentRes = await fetch(`${AGENT_SERVER_URL}/api/agent/message`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text, sessionId }),
+        body: JSON.stringify({ text, sessionId, history }),
         signal: AbortSignal.timeout(AGENT_TIMEOUT_MS),
       });
 
-      // FastAPI answered, but with an error. Forward its status and message
-      // (503 = model busy) instead of throwing a generic "fetch failed".
+      // FastAPI answered with an error: forward its status and message.
       if (!agentRes.ok) {
         const detail = await readErrorDetail(agentRes);
         console.error(`agent-server responded with ${agentRes.status}: ${detail}`);
@@ -92,8 +100,7 @@ router.post(
       const replyText = agentData.reply.text;
       const toolCalls = agentData.toolCalls || [];
 
-      // 2. Only create a Task document if the agent classified this
-      //    as an actual task, not plain chat (e.g. "hi" stays out of Task history).
+      // 3. Only real tasks get a Task document ("hi" stays out of Task history).
       if (agentData.messageType === "task") {
         task = new Task({
           sessionId,
@@ -104,8 +111,7 @@ router.post(
         await task.save();
       }
 
-      // 3. Log every real tool call the agent made, tied to this session
-      //    and (if one exists) this task — this is the safety/audit trail.
+      // 4. Audit trail for every real tool call.
       for (const call of toolCalls) {
         await AuditLog.create({
           sessionId,
@@ -117,20 +123,17 @@ router.post(
         });
       }
 
-      // 4. Persist the conversation either way — chat or task,
-      //    every message still belongs in the chat history.
+      // 5. Save the new exchange to the conversation.
       const userMessage = { role: "user" as const, text, timestamp: Date.now() };
       const agentMessage = { role: "agent" as const, text: replyText, timestamp: Date.now() };
 
-      let conversation = await Conversation.findOne({ sessionId });
       if (!conversation) {
         conversation = new Conversation({ sessionId, messages: [] });
       }
       conversation.messages.push(userMessage, agentMessage);
       await conversation.save();
 
-      // 5. If a Task was created, mark it completed now that the
-      //    agent has finished responding.
+      // 6. Mark the task completed.
       if (task) {
         task.status = "completed";
         task.result = replyText;
@@ -143,8 +146,7 @@ router.post(
         toolCalls,
       });
     } catch (err) {
-      // If something failed partway through and a Task was already
-      // created, mark it failed rather than leaving it stuck as "running".
+      // Don't leave a Task stuck as "running" if something failed.
       if (task) {
         task.status = "failed";
         task.error = err instanceof Error ? err.message : "Unknown error";
@@ -161,7 +163,7 @@ router.post(
         return;
       }
 
-      // FastAPI isn't reachable at all (not running, wrong port, connection refused).
+      // FastAPI isn't reachable at all.
       if (err instanceof TypeError && err.message === "fetch failed") {
         res.status(502).json({
           code: "agent_unreachable",
@@ -170,10 +172,19 @@ router.post(
         return;
       }
 
-      // Anything else (database errors, bugs) still goes to your existing error handler.
+      // Anything else (database errors, bugs) goes to the error handler.
       next(err);
     }
   }
 );
+
+router.get("/history/:sessionId", async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const conversation = await Conversation.findOne({ sessionId: req.params.sessionId });
+    res.json({ messages: conversation?.messages ?? [] });
+  } catch (err) {
+    next(err);
+  }
+});
 
 export default router;

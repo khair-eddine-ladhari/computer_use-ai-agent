@@ -6,17 +6,15 @@ from crew.tasks import create_chat_task
 from tools.desktop_tools import build_tools
 from llm.client import get_models
 
-# Time allowed per model before moving to the next one.
 ATTEMPT_TIMEOUT_SECONDS = 15
-# Total budget. Must stay below the 60s timeout in the frontend's lib/api.ts.
-TOTAL_BUDGET_SECONDS = 45
+TOTAL_BUDGET_SECONDS = 45  # must stay below the 60s timeout in the frontend's lib/api.ts
 
 _executor = concurrent.futures.ThreadPoolExecutor(max_workers=16)
 
 
-def _kickoff(user_message: str, calls: list, model: str) -> str:
+def _kickoff(user_message: str, calls: list, model: str, history: list[dict]) -> str:
     agent = create_computer_agent(build_tools(calls), model)
-    task = create_chat_task(user_message, agent)
+    task = create_chat_task(user_message, agent, history)
 
     crew = Crew(
         agents=[agent],
@@ -46,7 +44,8 @@ def _fallback_reply(calls: list) -> str:
     return "Done. I " + ", then ".join(_describe(c) for c in calls) + "."
 
 
-def run_chat(user_message: str):
+def run_chat(user_message: str, history: list[dict] | None = None):
+    history = history or []
     deadline = time.monotonic() + TOTAL_BUDGET_SECONDS
     last_error: Exception | None = None
 
@@ -55,9 +54,8 @@ def run_chat(user_message: str):
         if remaining < 3:
             break
 
-        # Fresh list per attempt, so a slow earlier attempt can't mix in.
         calls: list[dict] = []
-        future = _executor.submit(_kickoff, user_message, calls, model)
+        future = _executor.submit(_kickoff, user_message, calls, model, history)
 
         try:
             reply = future.result(timeout=min(ATTEMPT_TIMEOUT_SECONDS, remaining))
@@ -65,7 +63,6 @@ def run_chat(user_message: str):
         except Exception as e:
             last_error = e
             print(f"[run_chat] model {model} failed: {type(e).__name__}: {e}")
-            # If the action was already recorded, it happened. Report it.
             if calls:
                 return _fallback_reply(calls), list(calls)
 

@@ -4,7 +4,7 @@ import { useState, useRef, useEffect } from "react";
 import { motion } from "framer-motion";
 import { Send } from "lucide-react";
 import type { ChatMessage } from "@/agent/types";
-import { sendMessageToAgent } from "@/lib/api";
+import { sendMessageToAgent, loadHistory } from "@/lib/api";
 import { executeToolCall } from "@/agent/executor";
 
 export default function AgentApp() {
@@ -23,6 +23,16 @@ export default function AgentApp() {
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
   }, [messages, isThinking]);
+
+
+  useEffect(() => {
+  loadHistory()
+    .then((saved) => {
+      // Keep the greeting on top. Skip if the user already sent something.
+      setMessages((current) => (current.length <= 1 ? [current[0], ...saved] : current));
+    })
+    .catch(() => {});
+}, []);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();

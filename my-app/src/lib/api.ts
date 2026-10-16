@@ -20,7 +20,7 @@ export interface AgentResponse {
 
 export async function sendMessageToAgent(text: string): Promise<AgentResponse> {
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 60_000);
+  const timeout = setTimeout(() => controller.abort(), 100_000);
 
   try {
     const res = await fetch(`${API_BASE_URL}/api/agent/message`, {
@@ -38,4 +38,21 @@ export async function sendMessageToAgent(text: string): Promise<AgentResponse> {
   } finally {
     clearTimeout(timeout);
   }
+}
+
+
+export async function loadHistory(): Promise<ChatMessage[]> {
+  const res = await fetch(`${API_BASE_URL}/api/agent/history/${getSessionId()}`);
+  if (!res.ok) return [];
+
+  const data = (await res.json()) as {
+    messages: Array<{ role: "user" | "agent"; text: string; timestamp: number }>;
+  };
+
+  return data.messages.slice(-50).map((m) => ({
+    id: crypto.randomUUID(),
+    role: m.role,
+    text: m.text,
+    timestamp: m.timestamp,
+  }));
 }
