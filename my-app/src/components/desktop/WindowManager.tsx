@@ -6,14 +6,14 @@ import Window from "@/components/window/Window";
 import FilesApp from "@/components/apps/FilesApp";
 import BrowserApp from "@/components/apps/BrowserApp";
 import TerminalApp from "@/components/apps/TerminalApp";
-import AgentApp from "@/components/apps/AgentApp";
+import AgentTabs from "@/components/agent/AgentTabs";
 import type { AppId } from "@/agent/types";
 
 const APP_COMPONENTS: Record<AppId, React.ComponentType> = {
   files: FilesApp,
   browser: BrowserApp,
   terminal: TerminalApp,
-  agent: AgentApp,
+  agent: AgentTabs,
 };
 
 export default function WindowManager() {

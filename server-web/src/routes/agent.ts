@@ -187,4 +187,33 @@ router.get("/history/:sessionId", async (req: Request, res: Response, next: Next
   }
 });
 
+
+
+
+router.get("/activity/:sessionId", async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { sessionId } = req.params;
+
+    const [logs, tasks] = await Promise.all([
+      AuditLog.find({ sessionId }).sort({ timestamp: -1 }).limit(50).lean(),
+      Task.find({ sessionId }).sort({ createdAt: -1 }).limit(50).lean(),
+    ]);
+
+    const goals = new Map(tasks.map((t) => [String(t._id), t.goal]));
+
+    res.json({
+      actions: logs.map((l) => ({
+        id: String(l._id),
+        tool: l.tool,
+        args: l.args,
+        result: l.result,
+        message: l.message,
+        timestamp: l.timestamp,
+        goal: l.taskId ? goals.get(l.taskId) ?? null : null,
+      })),
+    });
+  } catch (err) {
+    next(err);
+  }
+});
 export default router;

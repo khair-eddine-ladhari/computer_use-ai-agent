@@ -56,3 +56,21 @@ export async function loadHistory(): Promise<ChatMessage[]> {
     timestamp: m.timestamp,
   }));
 }
+
+export interface ActivityEntry {
+  id: string;
+  tool: string;
+  args: Record<string, unknown>;
+  result: "success" | "failed" | "blocked";
+  message?: string;
+  timestamp: number;
+  goal: string | null;
+}
+
+export async function loadActivity(): Promise<ActivityEntry[]> {
+  const res = await fetch(`${API_BASE_URL}/api/agent/activity/${getSessionId()}`);
+  if (!res.ok) return [];
+
+  const data = (await res.json()) as { actions: ActivityEntry[] };
+  return data.actions;
+}
