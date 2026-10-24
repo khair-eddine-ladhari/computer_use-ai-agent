@@ -1,6 +1,6 @@
 import type { ChatMessage } from "@/agent/types";
 import type { ServerToolCall } from "@/agent/actions";
-
+import { getDesktopSnapshot } from "@/lib/snapshot";
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
 
 function getSessionId(): string {
@@ -26,7 +26,11 @@ export async function sendMessageToAgent(text: string): Promise<AgentResponse> {
     const res = await fetch(`${API_BASE_URL}/api/agent/message`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ text, sessionId: getSessionId() }),
+      body: JSON.stringify({
+  text,
+  sessionId: getSessionId(),
+  desktop: getDesktopSnapshot(),
+}),
       signal: controller.signal,
     });
 

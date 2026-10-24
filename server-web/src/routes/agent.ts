@@ -11,8 +11,8 @@ const router = express.Router();
 interface AgentMessageBody {
   text: string;
   sessionId: string;
+  desktop?: unknown;
 }
-
 interface AgentServerResponse {
   reply: { id: string; role: string; text: string; timestamp: number };
   toolCalls: Array<{ tool: string; args: Record<string, unknown> }>;
@@ -70,7 +70,7 @@ router.post(
   "/message",
   requireFields(["text", "sessionId"]),
   async (req: Request<{}, {}, AgentMessageBody>, res: Response, next: NextFunction) => {
-    const { text, sessionId } = req.body;
+    const { text, sessionId, desktop } = req.body;
     let task = null;
 
     try {
@@ -84,7 +84,12 @@ router.post(
       const agentRes = await fetch(`${AGENT_SERVER_URL}/api/agent/message`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text, sessionId, history }),
+        body: JSON.stringify({
+  text,
+  sessionId,
+  history,
+  desktop: JSON.stringify(desktop ?? {}).length < 4000 ? desktop : undefined,
+}),
         signal: AbortSignal.timeout(AGENT_TIMEOUT_MS),
       });
 
