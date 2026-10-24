@@ -4,6 +4,7 @@ import { useState } from "react";
 import { ListChecks, MessageSquare } from "lucide-react";
 import AgentApp from "@/components/apps/AgentApp";
 import ActivityLog from "@/components/agent/ActivityLog";
+import ApprovalPanel from "@/components/agent/ApprovalPanel";
 
 type Tab = "chat" | "activity";
 
@@ -27,6 +28,8 @@ export default function AgentTabs() {
           <ListChecks size={12} /> Activity
         </button>
       </nav>
+
+      <ApprovalPanel />
 
       <div className="min-h-0 flex-1">
         {/* Chat stays mounted so its messages survive tab switches. */}

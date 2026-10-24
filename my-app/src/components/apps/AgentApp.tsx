@@ -5,7 +5,7 @@ import { motion } from "framer-motion";
 import { Send } from "lucide-react";
 import type { ChatMessage } from "@/agent/types";
 import { sendMessageToAgent, loadHistory } from "@/lib/api";
-import { executeToolCall } from "@/agent/executor";
+import { processToolCalls } from "@/agent/runToolCalls";
 
 export default function AgentApp() {
   const [messages, setMessages] = useState<ChatMessage[]>([
@@ -53,9 +53,7 @@ export default function AgentApp() {
 
       // Run any actions the agent decided on before showing the reply,
       // so the desktop updates in sync with the message appearing.
-      for (const call of toolCalls) {
-        executeToolCall(call);
-      }
+      void processToolCalls(toolCalls);
 
       setMessages((m) => [...m, reply]);
         } catch (err) {

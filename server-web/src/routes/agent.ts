@@ -1,9 +1,10 @@
 import express, { Request, Response, NextFunction } from "express";
 import crypto from "crypto";
+import mongoose from "mongoose";
 import Conversation from "../models/Conversation";
 import Task from "../models/Task";
-import { requireFields } from "../middleware/validation";
 import AuditLog from "../models/AuditLog";
+import { requireFields } from "../middleware/validation";
 
 const router = express.Router();
 
@@ -18,19 +19,30 @@ interface AgentServerResponse {
   messageType: "chat" | "task";
 }
 
+// What the browser receives for each action.
+interface ClientAction {
+  id: string;
+  tool: string;
+  args: Record<string, unknown>;
+  requiresApproval: boolean;
+}
+
 const AGENT_SERVER_URL = process.env.AGENT_SERVER_URL || "http://localhost:8000";
-
-// How many earlier messages the agent gets to see with each request.
 const HISTORY_LIMIT = 10;
-
-// How long Node waits for FastAPI before giving up. Keep this LONGER than the
-// Python budget so Python normally answers first with its own clean error.
 const AGENT_TIMEOUT_MS = 90_000;
-
 const BUSY_MESSAGE = "The model is busy right now. Please try again in a moment.";
 
-// FastAPI sends errors as {"detail": "..."}. Pull the message out of that,
-// or fall back to a generic line if the body is anything else.
+// Tools that need a human's OK before they run.
+// Decided here, in code. The model can't change this list.
+const APPROVAL_TOOLS = new Set(["run_command"]);
+
+function describeCall(call: { tool: string; args: Record<string, unknown> }): string {
+  if (call.tool === "run_command") {
+    return `run "${String(call.args.command)}" in the terminal`;
+  }
+  return call.tool;
+}
+
 async function readErrorDetail(agentRes: {
   status: number;
   text(): Promise<string>;
@@ -44,8 +56,6 @@ async function readErrorDetail(agentRes: {
   }
 }
 
-// True when Node itself gave up waiting: our AbortSignal.timeout,
-// or one of undici's built-in timeouts.
 function isTimeout(err: unknown): boolean {
   const e = err as { name?: string; cause?: { code?: string } } | null;
   return (
@@ -64,17 +74,13 @@ router.post(
     let task = null;
 
     try {
-      // 1. Load this session's conversation BEFORE calling the agent, and take
-      //    the most recent messages as its memory. The new message isn't saved
-      //    yet, so history only contains what came before it.
+      // 1. Load recent history BEFORE saving the new message.
       let conversation = await Conversation.findOne({ sessionId });
       const history = (conversation?.messages ?? [])
         .slice(-HISTORY_LIMIT)
         .map((m) => ({ role: m.role, text: m.text }));
 
-
-      // 2. Call the AI brain with the history. It decides the reply AND
-      //    classifies whether this message is chat or a task.
+      // 2. Ask the AI brain.
       const agentRes = await fetch(`${AGENT_SERVER_URL}/api/agent/message`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -82,7 +88,6 @@ router.post(
         signal: AbortSignal.timeout(AGENT_TIMEOUT_MS),
       });
 
-      // FastAPI answered with an error: forward its status and message.
       if (!agentRes.ok) {
         const detail = await readErrorDetail(agentRes);
         console.error(`agent-server responded with ${agentRes.status}: ${detail}`);
@@ -97,10 +102,9 @@ router.post(
       }
 
       const agentData = (await agentRes.json()) as AgentServerResponse;
-      const replyText = agentData.reply.text;
       const toolCalls = agentData.toolCalls || [];
 
-      // 3. Only real tasks get a Task document ("hi" stays out of Task history).
+      // 3. Only real tasks get a Task document.
       if (agentData.messageType === "task") {
         task = new Task({
           sessionId,
@@ -111,19 +115,36 @@ router.post(
         await task.save();
       }
 
-      // 4. Audit trail for every real tool call.
+      // 4. Log each action as "pending". The browser reports the real
+      //    outcome later, or a human approves or rejects it first.
+      const actions: ClientAction[] = [];
       for (const call of toolCalls) {
-        await AuditLog.create({
+        const requiresApproval = APPROVAL_TOOLS.has(call.tool);
+        const log = await AuditLog.create({
           sessionId,
           taskId: task?.id,
           tool: call.tool,
           args: call.args,
-          result: "success",
+          result: "pending",
+          requiresApproval,
+          approved: false,
           timestamp: Date.now(),
+        });
+        actions.push({
+          id: String(log._id),
+          tool: call.tool,
+          args: call.args,
+          requiresApproval,
         });
       }
 
-      // 5. Save the new exchange to the conversation.
+      // If something is waiting for approval, don't let the reply claim it's done.
+      const waiting = actions.filter((a) => a.requiresApproval);
+      const replyText = waiting.length
+        ? `I need your approval to ${waiting.map(describeCall).join(" and ")}.`
+        : agentData.reply.text;
+
+      // 5. Save the new exchange.
       const userMessage = { role: "user" as const, text, timestamp: Date.now() };
       const agentMessage = { role: "agent" as const, text: replyText, timestamp: Date.now() };
 
@@ -133,7 +154,6 @@ router.post(
       conversation.messages.push(userMessage, agentMessage);
       await conversation.save();
 
-      // 6. Mark the task completed.
       if (task) {
         task.status = "completed";
         task.result = replyText;
@@ -143,10 +163,9 @@ router.post(
 
       res.json({
         reply: { id: crypto.randomUUID(), ...agentMessage },
-        toolCalls,
+        toolCalls: actions,
       });
     } catch (err) {
-      // Don't leave a Task stuck as "running" if something failed.
       if (task) {
         task.status = "failed";
         task.error = err instanceof Error ? err.message : "Unknown error";
@@ -156,14 +175,12 @@ router.post(
 
       console.error("Failed to process agent message:", err);
 
-      // Node gave up waiting for FastAPI: tell the UI the model is busy.
       if (isTimeout(err)) {
         res.set("Retry-After", "5");
         res.status(503).json({ code: "model_busy", message: BUSY_MESSAGE });
         return;
       }
 
-      // FastAPI isn't reachable at all.
       if (err instanceof TypeError && err.message === "fetch failed") {
         res.status(502).json({
           code: "agent_unreachable",
@@ -172,7 +189,6 @@ router.post(
         return;
       }
 
-      // Anything else (database errors, bugs) goes to the error handler.
       next(err);
     }
   }
@@ -186,9 +202,6 @@ router.get("/history/:sessionId", async (req: Request, res: Response, next: Next
     next(err);
   }
 });
-
-
-
 
 router.get("/activity/:sessionId", async (req: Request, res: Response, next: NextFunction) => {
   try {
@@ -216,4 +229,107 @@ router.get("/activity/:sessionId", async (req: Request, res: Response, next: Nex
     next(err);
   }
 });
+
+// A human said yes. The browser may now run the action.
+router.post(
+  "/actions/:id/approve",
+  async (req: Request<{ id: string }>, res: Response, next: NextFunction) => {
+    try {
+      const { id } = req.params;
+      if (!mongoose.isValidObjectId(id)) {
+        res.status(400).json({ error: "Invalid action id" });
+        return;
+      }
+
+      const log = await AuditLog.findOneAndUpdate(
+        { _id: id, result: "pending", requiresApproval: true },
+        { approved: true },
+        { new: true }
+      );
+      if (!log) {
+        res.status(409).json({ error: "Action is not waiting for approval" });
+        return;
+      }
+
+      res.json({ ok: true });
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
+// A human said no. Nothing runs, and the log records it as blocked.
+router.post(
+  "/actions/:id/reject",
+  async (req: Request<{ id: string }>, res: Response, next: NextFunction) => {
+    try {
+      const { id } = req.params;
+      if (!mongoose.isValidObjectId(id)) {
+        res.status(400).json({ error: "Invalid action id" });
+        return;
+      }
+
+      const log = await AuditLog.findOneAndUpdate(
+        { _id: id, result: "pending", requiresApproval: true },
+        { result: "blocked", message: "rejected by user" },
+        { new: true }
+      );
+      if (!log) {
+        res.status(409).json({ error: "Action is not waiting for approval" });
+        return;
+      }
+
+      res.json({ ok: true });
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
+// The browser reports what actually happened when it ran the action.
+router.post(
+  "/actions/:id/result",
+  async (
+    req: Request<{ id: string }, {}, { result?: string; message?: string }>,
+    res: Response,
+    next: NextFunction
+  ) => {
+    try {
+      const { id } = req.params;
+      const { result, message } = req.body;
+
+      if (!mongoose.isValidObjectId(id)) {
+        res.status(400).json({ error: "Invalid action id" });
+        return;
+      }
+      if (result !== "success" && result !== "failed") {
+        res.status(400).json({ error: "result must be 'success' or 'failed'" });
+        return;
+      }
+
+      // Refuses if the action is already finished, or if it needs approval and has none.
+      const log = await AuditLog.findOneAndUpdate(
+        {
+          _id: id,
+          result: "pending",
+          $or: [{ requiresApproval: false }, { approved: true }],
+        },
+        {
+          result,
+          message: typeof message === "string" ? message.slice(0, 300) : undefined,
+        },
+        { new: true }
+      );
+      if (!log) {
+        res.status(409).json({ error: "Action is finished or still needs approval" });
+        return;
+      }
+
+      res.json({ ok: true });
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
 export default router;

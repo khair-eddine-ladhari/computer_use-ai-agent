@@ -29,6 +29,7 @@ function describe(e: ActivityEntry): string {
 }
 
 const RESULT_STYLE: Record<ActivityEntry["result"], string> = {
+  pending: "text-ink-muted",
   success: "text-emerald-400",
   failed: "text-red-400",
   blocked: "text-amber-400",
