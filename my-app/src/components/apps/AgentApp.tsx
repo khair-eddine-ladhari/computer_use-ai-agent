@@ -4,8 +4,8 @@ import { useState, useRef, useEffect } from "react";
 import { motion } from "framer-motion";
 import { Send } from "lucide-react";
 import type { ChatMessage } from "@/agent/types";
-import { sendMessageToAgent } from "@/lib/api";
-import { executeToolCall } from "@/agent/executor";
+import { sendMessageToAgent, loadHistory, ApiError } from "@/lib/api";
+import { processToolCalls } from "@/agent/runToolCalls";
 
 export default function AgentApp() {
   const [messages, setMessages] = useState<ChatMessage[]>([
@@ -23,6 +23,16 @@ export default function AgentApp() {
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
   }, [messages, isThinking]);
+
+
+  useEffect(() => {
+  loadHistory()
+    .then((saved) => {
+      // Keep the greeting on top. Skip if the user already sent something.
+      setMessages((current) => (current.length <= 1 ? [current[0], ...saved] : current));
+    })
+    .catch(() => {});
+}, []);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -43,23 +53,20 @@ export default function AgentApp() {
 
       // Run any actions the agent decided on before showing the reply,
       // so the desktop updates in sync with the message appearing.
-      for (const call of toolCalls) {
-        executeToolCall(call);
-      }
+      void processToolCalls(toolCalls);
 
       setMessages((m) => [...m, reply]);
-        } catch (err) {
+          } catch (err) {
       const timedOut = err instanceof DOMException && err.name === "AbortError";
+      const text = timedOut
+        ? "The agent took too long to respond. Please try again."
+        : err instanceof ApiError
+          ? err.message.replace(/^\w+Error:\s*/, "")
+          : "Couldn't reach the agent server. Is it running?";
+
       setMessages((m) => [
         ...m,
-        {
-          id: crypto.randomUUID(),
-          role: "agent",
-          text: timedOut
-            ? "The agent took too long to respond. Please try again."
-            : "Couldn't reach the agent server. Is it running?",
-          timestamp: Date.now(),
-        },
+        { id: crypto.randomUUID(), role: "agent", text, timestamp: Date.now() },
       ]);
     } finally {
       setIsThinking(false);

@@ -1,11 +1,15 @@
 import mongoose, { Schema, Document } from "mongoose";
 
+export type AuditResult = "pending" | "success" | "failed" | "blocked";
+
 export interface IAuditLog extends Document {
   sessionId: string;
   taskId?: string;
   tool: string;
   args: Record<string, unknown>;
-  result: "success" | "failed" | "blocked";
+  result: AuditResult;
+  requiresApproval: boolean;
+  approved: boolean;
   message?: string;
   timestamp: number;
 }
@@ -15,7 +19,14 @@ const AuditLogSchema = new Schema<IAuditLog>({
   taskId: { type: String, index: true },
   tool: { type: String, required: true },
   args: { type: Schema.Types.Mixed, default: {} },
-  result: { type: String, enum: ["success", "failed", "blocked"], required: true },
+  result: {
+    type: String,
+    enum: ["pending", "success", "failed", "blocked"],
+    default: "pending",
+    index: true,
+  },
+  requiresApproval: { type: Boolean, default: false },
+  approved: { type: Boolean, default: false },
   message: { type: String },
   timestamp: { type: Number, required: true },
 });

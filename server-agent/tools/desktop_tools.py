@@ -10,7 +10,7 @@ def build_tools(calls: list) -> list:
     """Builds the agent's tools for ONE request. Each tool appends the action
     it performed to `calls`, which the API returns to the frontend as toolCalls."""
 
-    @tool("Open App", result_as_answer=True)
+    @tool("Open App")
     def open_app(app_id: str) -> str:
         """
         Opens an application window on the simulated desktop.
@@ -22,7 +22,7 @@ def build_tools(calls: list) -> list:
         calls.append({"tool": "open_app", "args": {"appId": app}})
         return f"Opened the {app} app."
 
-    @tool("Close App", result_as_answer=True)
+    @tool("Close App")
     def close_app(app_id: str) -> str:
         """
         Closes one application window on the simulated desktop.
@@ -34,7 +34,7 @@ def build_tools(calls: list) -> list:
         calls.append({"tool": "close_app", "args": {"appId": app}})
         return f"Closed the {app} app."
 
-    @tool("Close All Apps", result_as_answer=True)
+    @tool("Close All Apps")
     def close_all_apps() -> str:
         """
         Closes every open app window (files, browser, terminal).
@@ -44,7 +44,7 @@ def build_tools(calls: list) -> list:
             calls.append({"tool": "close_app", "args": {"appId": app}})
         return "Closed all app windows."
 
-    @tool("Open Folder", result_as_answer=True)
+    @tool("Open Folder")
     def open_folder(folder_path: str) -> str:
         """
         Opens a folder in the Files app (opens the Files app if needed).
@@ -57,7 +57,7 @@ def build_tools(calls: list) -> list:
         calls.append({"tool": "open_folder", "args": {"path": path}})
         return f"Opened the folder {'/'.join(path)}."
 
-    @tool("Open File", result_as_answer=True)
+    @tool("Open File")
     def open_file(file_path: str) -> str:
         """
         Opens a file in the Files app (opens the Files app if needed).
@@ -81,7 +81,7 @@ def build_tools(calls: list) -> list:
         )
         return f"Opened {canonical[-1]}."
 
-    @tool("Run Terminal Command", result_as_answer=True)
+    @tool("Run Terminal Command")
     def run_command(command: str) -> str:
         """
         Runs a command in the simulated Terminal app (opens it if needed).
