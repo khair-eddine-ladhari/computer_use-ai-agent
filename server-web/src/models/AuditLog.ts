@@ -12,6 +12,7 @@ export interface IAuditLog extends Document {
   approved: boolean;
   message?: string;
   timestamp: number;
+  desktopAfter?: Record<string, unknown>;
 }
 
 const AuditLogSchema = new Schema<IAuditLog>({
@@ -29,6 +30,7 @@ const AuditLogSchema = new Schema<IAuditLog>({
   approved: { type: Boolean, default: false },
   message: { type: String },
   timestamp: { type: Number, required: true },
+  desktopAfter: { type: Schema.Types.Mixed },
 });
 
 export default mongoose.model<IAuditLog>("AuditLog", AuditLogSchema);

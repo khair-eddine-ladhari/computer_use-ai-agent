@@ -295,13 +295,21 @@ router.post(
 router.post(
   "/actions/:id/result",
   async (
-    req: Request<{ id: string }, {}, { result?: string; message?: string }>,
+    req: Request<
+  { id: string },
+  {},
+  {
+    result?: string;
+    message?: string;
+    desktop?: unknown;
+  }
+>,
     res: Response,
     next: NextFunction
   ) => {
     try {
       const { id } = req.params;
-      const { result, message } = req.body;
+      const { result, message, desktop } = req.body;
 
       if (!mongoose.isValidObjectId(id)) {
         res.status(400).json({ error: "Invalid action id" });
@@ -312,6 +320,16 @@ router.post(
         return;
       }
 
+
+      const validDesktop =
+  desktop !== null &&
+  typeof desktop === "object" &&
+  !Array.isArray(desktop) &&
+  Array.isArray(
+    (desktop as Record<string, unknown>).openWindows
+  ) &&
+  JSON.stringify(desktop).length <= 4000;
+
       // Refuses if the action is already finished, or if it needs approval and has none.
       const log = await AuditLog.findOneAndUpdate(
         {
@@ -320,9 +338,13 @@ router.post(
           $or: [{ requiresApproval: false }, { approved: true }],
         },
         {
-          result,
-          message: typeof message === "string" ? message.slice(0, 300) : undefined,
-        },
+  result,
+  message:
+    typeof message === "string"
+      ? message.slice(0, 300)
+      : undefined,
+  ...(validDesktop ? { desktopAfter: desktop } : {}),
+},
         { new: true }
       );
       if (!log) {
