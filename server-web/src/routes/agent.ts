@@ -5,8 +5,24 @@ import Conversation from "../models/Conversation";
 import Task from "../models/Task";
 import AuditLog from "../models/AuditLog";
 import { requireFields } from "../middleware/validation";
-
+import { verifyAction } from "../services/verifyAction";
 const router = express.Router();
+
+
+
+async function isBatchFinished(taskId: string): Promise<boolean> {
+  const pendingCount = await AuditLog.countDocuments({
+    taskId,
+    result: "pending",
+  });
+
+  const totalCount = await AuditLog.countDocuments({
+    taskId,
+  });
+
+  return totalCount > 0 && pendingCount === 0;
+}
+
 
 interface AgentMessageBody {
   text: string;
@@ -160,11 +176,15 @@ router.post(
       await conversation.save();
 
       if (task) {
-        task.status = "completed";
-        task.result = replyText;
-        task.finishedAt = new Date();
-        await task.save();
-      }
+  task.status = waiting.length > 0
+    ? "waiting_approval"
+    : "running";
+
+  task.result = undefined;
+  task.finishedAt = undefined;
+
+  await task.save();
+}
 
       res.json({
         reply: { id: crypto.randomUUID(), ...agentMessage },
@@ -325,10 +345,21 @@ router.post(
   desktop !== null &&
   typeof desktop === "object" &&
   !Array.isArray(desktop) &&
+  JSON.stringify(desktop).length <= 4000 &&
   Array.isArray(
     (desktop as Record<string, unknown>).openWindows
   ) &&
-  JSON.stringify(desktop).length <= 4000;
+  (
+    (desktop as Record<string, unknown>).openWindows as unknown[]
+  ).every(
+    (w) =>
+      w !== null &&
+      typeof w === "object" &&
+      !Array.isArray(w) &&
+      typeof (w as Record<string, unknown>).app === "string" &&
+      typeof (w as Record<string, unknown>).minimized === "boolean" &&
+      typeof (w as Record<string, unknown>).focused === "boolean"
+  );
 
       // Refuses if the action is already finished, or if it needs approval and has none.
       const log = await AuditLog.findOneAndUpdate(
@@ -348,11 +379,70 @@ router.post(
         { new: true }
       );
       if (!log) {
-        res.status(409).json({ error: "Action is finished or still needs approval" });
-        return;
-      }
+  res.status(409).json({
+    error: "Action is finished or still needs approval"
+  });
+  return;
+}
 
-      res.json({ ok: true });
+const verification = validDesktop
+  ? verifyAction(
+      {
+        tool: log.tool,
+        args: log.args as Record<string, unknown>,
+      },
+      desktop as Parameters<typeof verifyAction>[1],
+      result
+    )
+  : {
+      status: "unknown" as const,
+      message: "No valid desktop snapshot available.",
+    };
+
+// Update the task associated with this action.
+if (log.taskId) {
+  const task = await Task.findById(log.taskId);
+
+  if (task && task.status !== "completed" &&
+      task.status !== "failed" &&
+      task.status !== "cancelled") {
+
+    task.currentStep += 1;
+    task.lastActionId = String(log._id);
+    task.lastActionResult = result;
+   const executionMessage =
+  typeof message === "string"
+    ? message.slice(0, 200)
+    : "";
+
+task.lastActionMessage = [
+  executionMessage,
+  `Verification: ${verification.status}`,
+  verification.message,
+]
+  .filter(Boolean)
+  .join(" | ")
+  .slice(0, 500);
+
+    if (validDesktop) {
+      task.latestDesktop =
+        desktop as Record<string, unknown>;
+    }
+
+    task.status = "running";
+
+    await task.save();
+    const finished = await isBatchFinished(String(task._id));
+
+if (finished) {
+  console.log(
+    `[Agent] All actions finished for task ${task._id}. Ready for review.`
+  );
+}
+  }
+}
+
+res.json({ ok: true });
     } catch (err) {
       next(err);
     }
