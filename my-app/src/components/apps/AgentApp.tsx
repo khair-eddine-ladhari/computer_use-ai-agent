@@ -49,7 +49,27 @@ export default function AgentApp() {
     setIsThinking(true);
 
     try {
+      
+      
+
+
+
+
       const { reply, toolCalls } = await sendMessageToAgent(userMessage.text);
+
+if (toolCalls.length > 0) {
+  setMessages((m) => [
+    ...m,
+    {
+      ...reply,
+      text: `Executing ${toolCalls.length} desktop action(s)...`,
+    },
+  ]);
+
+  await processToolCalls(toolCalls);
+} else {
+  setMessages((m) => [...m, reply]);
+}
 
       // Run any actions the agent decided on before showing the reply,
       // so the desktop updates in sync with the message appearing.
