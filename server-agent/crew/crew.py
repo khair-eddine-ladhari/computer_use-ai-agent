@@ -6,8 +6,8 @@ from crew.tasks import create_chat_task
 from tools.desktop_tools import build_tools
 from llm.client import get_models
 
-ATTEMPT_TIMEOUT_SECONDS = 15
-TOTAL_BUDGET_SECONDS = 45  # must stay below the timeouts in server-web and lib/api.ts
+ATTEMPT_TIMEOUT_SECONDS = 25
+TOTAL_BUDGET_SECONDS = 80  # must stay below the timeouts in server-web and lib/api.ts
 
 _executor = concurrent.futures.ThreadPoolExecutor(max_workers=16)
 
@@ -78,9 +78,54 @@ def run_chat(
             _kickoff, user_message, calls, model, history, desktop
         )
 
+
+
+
+
+
+
+
+
+
+
+
         try:
-            reply = future.result(timeout=min(ATTEMPT_TIMEOUT_SECONDS, remaining))
-            return reply, list(calls)
+            reply = future.result(
+            timeout=min(ATTEMPT_TIMEOUT_SECONDS, remaining)
+            )
+
+            print("\n========== AGENT COMPLETED ==========")
+            print("MODEL:", model)
+            print("FINAL REPLY:", reply)
+            print("TOOL CALL COUNT:", len(calls))
+
+            for i, call in enumerate(calls, start=1):
+                print(f"TOOL {i}:", call)
+
+                print("====================================\n")
+
+                return reply, list(calls)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         except Exception as e:
             last_error = e
             print(f"[run_chat] model {model} failed: {type(e).__name__}: {e}")

@@ -4,7 +4,7 @@ import { useState, useRef, useEffect } from "react";
 import { motion } from "framer-motion";
 import { Send } from "lucide-react";
 import type { ChatMessage } from "@/agent/types";
-import { sendMessageToAgent, loadHistory } from "@/lib/api";
+import { sendMessageToAgent, loadHistory, ApiError } from "@/lib/api";
 import { processToolCalls } from "@/agent/runToolCalls";
 
 export default function AgentApp() {
@@ -56,18 +56,17 @@ export default function AgentApp() {
       void processToolCalls(toolCalls);
 
       setMessages((m) => [...m, reply]);
-        } catch (err) {
+          } catch (err) {
       const timedOut = err instanceof DOMException && err.name === "AbortError";
+      const text = timedOut
+        ? "The agent took too long to respond. Please try again."
+        : err instanceof ApiError
+          ? err.message.replace(/^\w+Error:\s*/, "")
+          : "Couldn't reach the agent server. Is it running?";
+
       setMessages((m) => [
         ...m,
-        {
-          id: crypto.randomUUID(),
-          role: "agent",
-          text: timedOut
-            ? "The agent took too long to respond. Please try again."
-            : "Couldn't reach the agent server. Is it running?",
-          timestamp: Date.now(),
-        },
+        { id: crypto.randomUUID(), role: "agent", text, timestamp: Date.now() },
       ]);
     } finally {
       setIsThinking(false);

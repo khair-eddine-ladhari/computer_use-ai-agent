@@ -18,6 +18,21 @@ export interface AgentResponse {
   toolCalls: ServerToolCall[];
 }
 
+
+export class ApiError extends Error {
+  constructor(message: string, public status: number) {
+    super(message);
+  }
+}
+
+async function readError(res: Response): Promise<string> {
+  try {
+    const body = (await res.json()) as { message?: string; error?: string };
+    return body.message || body.error || `Request failed (${res.status})`;
+  } catch {
+    return `Request failed (${res.status})`;
+  }
+}
 export async function sendMessageToAgent(text: string): Promise<AgentResponse> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 100_000);
@@ -35,8 +50,8 @@ export async function sendMessageToAgent(text: string): Promise<AgentResponse> {
     });
 
     if (!res.ok) {
-      throw new Error(`Agent request failed: ${res.status} ${res.statusText}`);
-    }
+  throw new ApiError(await readError(res), res.status);
+}
 
     return res.json();
   } finally {

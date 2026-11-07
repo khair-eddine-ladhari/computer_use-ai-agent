@@ -64,10 +64,15 @@ def create_chat_task(
             f"The user's new message: \"{user_message}\"\n\n"
             "Use the conversation and the screen state to answer questions about them "
             "(for example 'what folder am I in?' or 'what is open?') and to understand "
-            "words like 'it' or 'that'. If the new message asks you to do something on "
-            "the desktop, call the one matching tool. Otherwise reply naturally in a "
-            "short sentence without using any tool."
+            "If the user requests desktop actions, identify every "
+"requested action. Call the appropriate tools in sequence. "
+"After each result, determine what remains to be done. "
+"Do not stop after one successful tool call if other actions "
+"remain. Otherwise, respond naturally without tools."
         ),
-        expected_output="A short, natural reply, or the result of the single tool you used.",
+        expected_output=(
+    "A concise report of the actions attempted, "
+    "completed, and any failures."
+),
         agent=agent,
     )
