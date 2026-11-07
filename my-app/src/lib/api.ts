@@ -1,7 +1,15 @@
 import type { ChatMessage } from "@/agent/types";
 import type { ServerToolCall } from "@/agent/actions";
 import { getDesktopSnapshot } from "@/lib/snapshot";
+import type { DesktopSnapshot } from "@/lib/snapshot";
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
+
+export class ApiError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "ApiError";
+  }
+}
 
 function getSessionId(): string {
   const key = "computer-agent-session-id";
@@ -18,21 +26,6 @@ export interface AgentResponse {
   toolCalls: ServerToolCall[];
 }
 
-
-export class ApiError extends Error {
-  constructor(message: string, public status: number) {
-    super(message);
-  }
-}
-
-async function readError(res: Response): Promise<string> {
-  try {
-    const body = (await res.json()) as { message?: string; error?: string };
-    return body.message || body.error || `Request failed (${res.status})`;
-  } catch {
-    return `Request failed (${res.status})`;
-  }
-}
 export async function sendMessageToAgent(text: string): Promise<AgentResponse> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 100_000);
@@ -50,7 +43,7 @@ export async function sendMessageToAgent(text: string): Promise<AgentResponse> {
     });
 
     if (!res.ok) {
-  throw new ApiError(await readError(res), res.status);
+  throw new ApiError(`Agent request failed: ${res.status} ${res.statusText}`);
 }
 
     return res.json();
@@ -109,8 +102,20 @@ async function postAction(path: string, body?: unknown): Promise<boolean> {
 
 export const approveAction = (id: string) => postAction(`${id}/approve`);
 export const rejectAction = (id: string) => postAction(`${id}/reject`);
+
+
+
+
+
+
 export const reportActionResult = (
   id: string,
   result: "success" | "failed",
-  message?: string
-) => postAction(`${id}/result`, { result, message });
+  message?: string,
+  desktop?: DesktopSnapshot
+) =>
+  postAction(`${id}/result`, {
+    result,
+    message,
+    desktop
+  });
