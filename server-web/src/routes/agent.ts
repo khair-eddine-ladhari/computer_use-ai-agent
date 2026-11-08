@@ -24,6 +24,70 @@ async function isBatchFinished(taskId: string): Promise<boolean> {
 }
 
 
+async function getBatchVerification(taskId: string) {
+  const logs = await AuditLog.find({ taskId })
+    .sort({ timestamp: 1 })
+    .lean();
+
+  if (logs.length === 0) {
+    return { status: "pending" as const, logs };
+  }
+
+  if (logs.some((log) => log.result === "pending")) {
+    return { status: "pending" as const, logs };
+  }
+
+  if (
+    logs.some(
+      (log) =>
+        log.result === "failed" ||
+        log.result === "blocked" ||
+        log.verificationStatus === "failed"
+    )
+  ) {
+    return { status: "needs_review" as const, logs };
+  }
+
+  if (
+    logs.some(
+      (log) => log.verificationStatus !== "verified"
+    )
+  ) {
+    return { status: "inconclusive" as const, logs };
+  }
+
+  return { status: "verified" as const, logs };
+}
+
+
+async function claimTaskForReview(taskId: string): Promise<boolean> {
+  const pendingCount = await AuditLog.countDocuments({
+    taskId,
+    result: "pending",
+  });
+
+  if (pendingCount !== 0) return false;
+
+  const totalCount = await AuditLog.countDocuments({ taskId });
+
+  if (totalCount === 0) return false;
+
+  const task = await Task.findOneAndUpdate(
+    {
+      _id: taskId,
+      status: "running",
+      reviewCount: 0,
+    },
+    {
+      $set: { status: "reviewing" },
+      $inc: { reviewCount: 1 },
+    },
+    { new: true }
+  );
+
+  return task !== null;
+}
+
 interface AgentMessageBody {
   text: string;
   sessionId: string;
@@ -399,6 +463,16 @@ const verification = validDesktop
       message: "No valid desktop snapshot available.",
     };
 
+    await AuditLog.updateOne(
+  { _id: log._id },
+  {
+    $set: {
+      verificationStatus: verification.status,
+      verificationMessage: verification.message,
+    },
+  }
+);
+
 // Update the task associated with this action.
 if (log.taskId) {
   const task = await Task.findById(log.taskId);
@@ -432,13 +506,64 @@ task.lastActionMessage = [
     task.status = "running";
 
     await task.save();
-    const finished = await isBatchFinished(String(task._id));
+
+const finished = await isBatchFinished(String(task._id));
 
 if (finished) {
-  console.log(
-    `[Agent] All actions finished for task ${task._id}. Ready for review.`
-  );
+  const batch = await getBatchVerification(String(task._id));
+
+  if (batch.status === "verified") {
+    // All actions were successfully verified.
+    const completed = await Task.findOneAndUpdate(
+      {
+        _id: task._id,
+        status: "running",
+      },
+      {
+        $set: {
+          status: "completed",
+          result: "All desktop actions verified successfully.",
+          finishedAt: new Date(),
+        },
+      },
+      { returnDocument: "after" }
+    );
+
+    if (completed) {
+      console.log(
+        `[Agent] Task ${task._id} completed successfully.`
+      );
+    }
+  } else if (batch.status === "needs_review") {
+    // A failed action requires correction.
+    const claimed = await claimTaskForReview(String(task._id));
+
+    if (claimed) {
+      console.log(
+        `[Agent] Task ${task._id} requires CrewAI correction.`
+      );
+    }
+  } else if (batch.status === "inconclusive") {
+    // Do not claim success without sufficient evidence.
+    await Task.findOneAndUpdate(
+      {
+        _id: task._id,
+        status: "running",
+      },
+      {
+        $set: {
+          status: "inconclusive",
+          result: "Some desktop actions could not be verified.",
+        },
+      }
+    );
+
+    console.log(
+      `[Agent] Task ${task._id} is inconclusive.`
+    );
+  }
 }
+
   }
 }
 

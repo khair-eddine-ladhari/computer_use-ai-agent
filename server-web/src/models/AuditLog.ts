@@ -13,6 +13,8 @@ export interface IAuditLog extends Document {
   message?: string;
   timestamp: number;
   desktopAfter?: Record<string, unknown>;
+  verificationStatus?: "verified" | "failed" | "unknown";
+verificationMessage?: string;
 }
 
 const AuditLogSchema = new Schema<IAuditLog>({
@@ -31,6 +33,16 @@ const AuditLogSchema = new Schema<IAuditLog>({
   message: { type: String },
   timestamp: { type: Number, required: true },
   desktopAfter: { type: Schema.Types.Mixed },
+  verificationStatus: {
+  type: String,
+  enum: ["verified", "failed", "unknown"],
+  default: undefined,
+},
+
+verificationMessage: {
+  type: String,
+  maxlength: 500,
+},
 });
 
 export default mongoose.model<IAuditLog>("AuditLog", AuditLogSchema);
