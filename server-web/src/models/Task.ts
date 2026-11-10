@@ -38,6 +38,8 @@ maxReviews: number;
   finishedAt?: Date;
   createdAt: Date;
   updatedAt: Date;
+  agentCallCount: number;
+maxAgentCalls: number;
 }
 
 const TaskSchema = new Schema<ITask>(
@@ -53,19 +55,28 @@ const TaskSchema = new Schema<ITask>(
       required: true,
     },
 
-    status: {
-      type: String,
-      enum: [
-        "pending",
-        "running",
-        "waiting_approval",
-        "completed",
-        "failed",
-        "cancelled",
-      ],
-      default: "pending",
-      index: true,
-    },
+
+
+   status: {
+
+
+  type: String,
+  enum: [
+    "pending",
+    "running",
+    "waiting_approval",
+    "reviewing",
+    "inconclusive",
+    "completed",
+    "failed",
+    "cancelled",
+  ],
+  default: "pending",
+  index: true,
+},
+
+
+
 
     currentStep: {
       type: Number,
@@ -137,6 +148,26 @@ maxReviews: {
     finishedAt: {
       type: Date,
     },
+
+
+    agentCallCount: {
+  type: Number,
+  default: 0,
+  min: 0,
+},
+
+maxAgentCalls: {
+  type: Number,
+  default: 3,
+  min: 1,
+  max: 10,
+},
+
+
+
+
+
+
   },
   { timestamps: true }
 );
@@ -145,3 +176,4 @@ maxReviews: {
 TaskSchema.index({ sessionId: 1, status: 1 });
 
 export default mongoose.model<ITask>("Task", TaskSchema);
+

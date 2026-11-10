@@ -6,26 +6,34 @@ import Task from "../models/Task";
 import AuditLog from "../models/AuditLog";
 import { requireFields } from "../middleware/validation";
 import { verifyAction } from "../services/verifyAction";
+import { requestCorrection } from "../services/requestCorrection";
 const router = express.Router();
 
 
+async function isBatchFinished(
+  taskId: string,
+  batchNumber: number
+): Promise<boolean> {
 
-async function isBatchFinished(taskId: string): Promise<boolean> {
+  const filter = { taskId, batchNumber };
+
   const pendingCount = await AuditLog.countDocuments({
-    taskId,
+    ...filter,
     result: "pending",
   });
 
-  const totalCount = await AuditLog.countDocuments({
-    taskId,
-  });
+  const totalCount = await AuditLog.countDocuments(filter);
 
   return totalCount > 0 && pendingCount === 0;
 }
-
-
-async function getBatchVerification(taskId: string) {
-  const logs = await AuditLog.find({ taskId })
+async function getBatchVerification(
+  taskId: string,
+  batchNumber: number
+) {
+  const logs = await AuditLog.find({
+    taskId,
+    batchNumber,
+  })
     .sort({ timestamp: 1 })
     .lean();
 
@@ -49,26 +57,30 @@ async function getBatchVerification(taskId: string) {
   }
 
   if (
-    logs.some(
-      (log) => log.verificationStatus !== "verified"
-    )
+    logs.some((log) => log.verificationStatus !== "verified")
   ) {
     return { status: "inconclusive" as const, logs };
   }
 
   return { status: "verified" as const, logs };
 }
+async function claimTaskForReview(
+  taskId: string,
+  batchNumber: number
+): Promise<boolean> {
 
-
-async function claimTaskForReview(taskId: string): Promise<boolean> {
   const pendingCount = await AuditLog.countDocuments({
     taskId,
+    batchNumber,
     result: "pending",
   });
 
   if (pendingCount !== 0) return false;
 
-  const totalCount = await AuditLog.countDocuments({ taskId });
+  const totalCount = await AuditLog.countDocuments({
+    taskId,
+    batchNumber,
+  });
 
   if (totalCount === 0) return false;
 
@@ -76,7 +88,8 @@ async function claimTaskForReview(taskId: string): Promise<boolean> {
     {
       _id: taskId,
       status: "running",
-      reviewCount: 0,
+      batchNumber,
+      agentCallCount: { $lt: 3 },
     },
     {
       $set: { status: "reviewing" },
@@ -87,6 +100,153 @@ async function claimTaskForReview(taskId: string): Promise<boolean> {
 
   return task !== null;
 }
+
+
+
+async function processCorrection(taskId: string): Promise<void> {
+  const task = await Task.findOne({
+    _id: taskId,
+    status: "reviewing",
+  });
+
+  if (!task) return;
+
+  // Never automatically retry an action rejected by the user.
+  const logs = await AuditLog.find({
+    taskId,
+    batchNumber: task.batchNumber,
+  }).sort({ timestamp: 1 });
+
+  if (logs.some((log) => log.result === "blocked")) {
+    await Task.updateOne(
+      { _id: taskId, status: "reviewing" },
+      {
+        $set: {
+          status: "failed",
+          error: "An action was rejected or blocked.",
+          finishedAt: new Date(),
+        },
+      }
+    );
+    return;
+  }
+
+  // Atomically reserve one CrewAI call.
+  // Use $expr to compare the two fields in MongoDB.
+  const reserved = await Task.findOneAndUpdate(
+    {
+      _id: taskId,
+      status: "reviewing",
+      $expr: {
+        $lt: ["$agentCallCount", "$maxAgentCalls"],
+      },
+    },
+    {
+      $inc: { agentCallCount: 1 },
+      $set: { status: "running" },
+    },
+    { new: true }
+  );
+
+  if (!reserved) {
+    await Task.updateOne(
+      {
+        _id: taskId,
+        status: "reviewing",
+        $expr: {
+          $gte: ["$agentCallCount", "$maxAgentCalls"],
+        },
+      },
+      {
+        $set: {
+          status: "failed",
+          error: "Maximum CrewAI calls reached.",
+          finishedAt: new Date(),
+        },
+      }
+    );
+    return;
+  }
+
+  try {
+    const correction = await requestCorrection(
+      reserved.goal,
+      logs.map((log) => ({
+        tool: log.tool,
+        args: log.args as Record<string, unknown>,
+        result: log.result,
+        verificationStatus: log.verificationStatus,
+        verificationMessage: log.verificationMessage,
+        message: log.message,
+      })),
+      reserved.latestDesktop ?? null
+    );
+
+    const nextBatch = reserved.batchNumber + 1;
+
+    if (correction.toolCalls.length === 0) {
+      await Task.updateOne(
+        { _id: taskId, status: "running" },
+        {
+          $set: {
+            status: "inconclusive",
+            result: correction.reply.text,
+          },
+        }
+      );
+      return;
+    }
+
+    // Register the new actions.
+    for (const call of correction.toolCalls) {
+      await AuditLog.create({
+        sessionId: reserved.sessionId,
+        taskId: String(reserved._id),
+        batchNumber: nextBatch,
+        tool: call.tool,
+        args: call.args,
+        result: "pending",
+        requiresApproval: APPROVAL_TOOLS.has(call.tool),
+        approved: false,
+        timestamp: Date.now(),
+      });
+    }
+
+    await Task.updateOne(
+      {
+        _id: taskId,
+        status: "running",
+        batchNumber: reserved.batchNumber,
+      },
+      {
+        $set: {
+          batchNumber: nextBatch,
+          status: correction.toolCalls.some((call) =>
+            APPROVAL_TOOLS.has(call.tool)
+          )
+            ? "waiting_approval"
+            : "running",
+        },
+      }
+    );
+  } catch (error) {
+    await Task.updateOne(
+      { _id: taskId, status: "running" },
+      {
+        $set: {
+          status: "failed",
+          error:
+            error instanceof Error
+              ? error.message
+              : "Correction request failed",
+          finishedAt: new Date(),
+        },
+      }
+    );
+  }
+}
+
+
 
 interface AgentMessageBody {
   text: string;
@@ -161,6 +321,18 @@ router.post(
         .map((m) => ({ role: m.role, text: m.text }));
 
       // 2. Ask the AI brain.
+
+      task = await Task.create({
+  sessionId,
+  goal: text,
+  status: "running",
+  startedAt: new Date(),
+  agentCallCount: 1,
+  maxAgentCalls: 3,
+  batchNumber: 0,
+});
+
+
       const agentRes = await fetch(`${AGENT_SERVER_URL}/api/agent/message`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -188,17 +360,15 @@ router.post(
 
       const agentData = (await agentRes.json()) as AgentServerResponse;
       const toolCalls = agentData.toolCalls || [];
+      if (agentData.messageType !== "task" || toolCalls.length === 0) {
+  task.status = "completed";
+  task.result = agentData.reply.text;
+  task.finishedAt = new Date();
+  await task.save();
+}
 
       // 3. Only real tasks get a Task document.
-      if (agentData.messageType === "task") {
-        task = new Task({
-          sessionId,
-          goal: text,
-          status: "running",
-          startedAt: new Date(),
-        });
-        await task.save();
-      }
+      
 
       // 4. Log each action as "pending". The browser reports the real
       //    outcome later, or a human approves or rejects it first.
@@ -239,7 +409,7 @@ router.post(
       conversation.messages.push(userMessage, agentMessage);
       await conversation.save();
 
-      if (task) {
+ if (task && task.status !== "completed") {
   task.status = waiting.length > 0
     ? "waiting_approval"
     : "running";
@@ -507,10 +677,16 @@ task.lastActionMessage = [
 
     await task.save();
 
-const finished = await isBatchFinished(String(task._id));
+const finished = await isBatchFinished(
+  String(task._id),
+  task.batchNumber
+);
 
 if (finished) {
-  const batch = await getBatchVerification(String(task._id));
+  const batch = await getBatchVerification(
+  String(task._id),
+  task.batchNumber
+);
 
   if (batch.status === "verified") {
     // All actions were successfully verified.
@@ -536,13 +712,18 @@ if (finished) {
     }
   } else if (batch.status === "needs_review") {
     // A failed action requires correction.
-    const claimed = await claimTaskForReview(String(task._id));
+    const claimed = await claimTaskForReview(
+  String(task._id),
+  task.batchNumber
+);
 
     if (claimed) {
-      console.log(
-        `[Agent] Task ${task._id} requires CrewAI correction.`
-      );
-    }
+  console.log(
+    `[Agent] Requesting CrewAI correction for task ${task._id}`
+  );
+
+  await processCorrection(String(task._id));
+}
   } else if (batch.status === "inconclusive") {
     // Do not claim success without sufficient evidence.
     await Task.findOneAndUpdate(

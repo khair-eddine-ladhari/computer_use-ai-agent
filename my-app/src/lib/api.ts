@@ -24,6 +24,7 @@ function getSessionId(): string {
 export interface AgentResponse {
   reply: ChatMessage;
   toolCalls: ServerToolCall[];
+  taskId?: string;
 }
 
 export async function sendMessageToAgent(text: string): Promise<AgentResponse> {
