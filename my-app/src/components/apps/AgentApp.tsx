@@ -62,7 +62,7 @@ if (toolCalls.length > 0) {
     ...m,
     {
       ...reply,
-      text: `Executing ${toolCalls.length} desktop action(s)...`,
+      
     },
   ]);
 
@@ -92,13 +92,18 @@ if (toolCalls.length > 0) {
       setIsThinking(false);
     }
   }
+  const ids = messages.map((msg) => msg.id);
+
+if (new Set(ids).size !== ids.length) {
+  console.warn("Duplicate message IDs detected:", ids);
+}
 
   return (
     <div className="flex h-full flex-col">
       <div ref={scrollRef} className="themed-scroll flex-1 space-y-3 overflow-auto p-3">
-        {messages.map((msg) => (
+        {messages.map((msg, index) => (
           <motion.div
-            key={msg.id}
+            key={`${msg.id}-${index}`}
             initial={{ opacity: 0, y: 8, scale: 0.98 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             transition={{ duration: 0.2, ease: "easeOut" }}

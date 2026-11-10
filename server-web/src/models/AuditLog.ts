@@ -5,6 +5,7 @@ export type AuditResult = "pending" | "success" | "failed" | "blocked";
 export interface IAuditLog extends Document {
   sessionId: string;
   taskId?: string;
+  batchNumber: number;
   tool: string;
   args: Record<string, unknown>;
   result: AuditResult;
@@ -13,11 +14,19 @@ export interface IAuditLog extends Document {
   message?: string;
   timestamp: number;
   desktopAfter?: Record<string, unknown>;
+  verificationStatus?: "verified" | "failed" | "unknown";
+  
+verificationMessage?: string;
 }
 
 const AuditLogSchema = new Schema<IAuditLog>({
   sessionId: { type: String, required: true, index: true },
   taskId: { type: String, index: true },
+  batchNumber: {
+    type: Number,
+    default: 0,
+    min: 0,
+  },
   tool: { type: String, required: true },
   args: { type: Schema.Types.Mixed, default: {} },
   result: {
@@ -31,6 +40,16 @@ const AuditLogSchema = new Schema<IAuditLog>({
   message: { type: String },
   timestamp: { type: Number, required: true },
   desktopAfter: { type: Schema.Types.Mixed },
+  verificationStatus: {
+  type: String,
+  enum: ["verified", "failed", "unknown"],
+  default: undefined,
+},
+
+verificationMessage: {
+  type: String,
+  maxlength: 500,
+},
 });
 
 export default mongoose.model<IAuditLog>("AuditLog", AuditLogSchema);
